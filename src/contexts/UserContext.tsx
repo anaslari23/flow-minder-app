@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase, UserProfile } from '@/lib/supabase';
 
@@ -113,7 +114,9 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
     } catch (error) {
       console.error('Error updating user data:', error);
-      localStorage.setItem('userData', JSON.stringify(updatedData));
+      // Create a proper reference to the updated data before using it
+      const localUpdatedData = { ...userData, ...data };
+      localStorage.setItem('userData', JSON.stringify(localUpdatedData));
     }
   };
 
