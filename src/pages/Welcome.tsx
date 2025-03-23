@@ -2,6 +2,7 @@
 import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import { CalendarIcon } from 'lucide-react';
 import Layout from '@/components/Layout';
 import { useUser } from '@/contexts/UserContext';
 import { Button } from '@/components/ui/button';
@@ -44,8 +45,17 @@ const Welcome: React.FC = () => {
         initial="hidden"
         animate="show"
       >
+        <motion.div 
+          className="mb-8"
+          variants={item}
+        >
+          <div className="bg-white w-24 h-24 rounded-full flex items-center justify-center mb-4 mx-auto shadow-lg">
+            <CalendarIcon className="h-12 w-12 text-period" />
+          </div>
+        </motion.div>
+        
         <motion.h1 
-          className="text-4xl font-bold mb-2 text-white"
+          className="text-4xl font-bold mb-2"
           variants={item}
         >
           Welcome
@@ -53,7 +63,7 @@ const Welcome: React.FC = () => {
         
         {isLoading ? (
           <motion.div variants={item}>
-            <Skeleton className="h-12 w-40 mb-10" />
+            <Skeleton className="h-12 w-40 mb-10 mx-auto" />
           </motion.div>
         ) : (
           <motion.h2 

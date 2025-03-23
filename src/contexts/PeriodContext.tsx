@@ -1,6 +1,7 @@
+
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useUser } from './UserContext';
-import { supabase, predictNextPeriodML, calculateCycleWithML } from '@/lib/supabase';
+import { supabase, predictNextPeriodML, calculateCycleWithML, PeriodPrediction } from '@/lib/supabase';
 import { toast } from 'sonner';
 
 export type PeriodData = {
@@ -20,11 +21,17 @@ type PeriodContextType = {
   latestPeriod: PeriodData | null;
   predictNextPeriod: () => Promise<{ startDate: string; endDate: string } | null>;
   isLoading: boolean;
-  mlPrediction: { 
-    nextPeriod: { startDate: string; endDate: string } | null;
-    averageCycle: number | null;
-    confidence: number | null;
-  };
+  mlPrediction: PeriodPrediction;
+};
+
+const defaultPrediction: PeriodPrediction = {
+  nextPeriod: null,
+  averageCycle: null,
+  shortestCycle: null,
+  longestCycle: null,
+  ovulationDate: null,
+  fertilityWindow: null,
+  confidence: null,
 };
 
 const PeriodContext = createContext<PeriodContextType>({
@@ -35,26 +42,14 @@ const PeriodContext = createContext<PeriodContextType>({
   latestPeriod: null,
   predictNextPeriod: async () => null,
   isLoading: true,
-  mlPrediction: {
-    nextPeriod: null,
-    averageCycle: null,
-    confidence: null,
-  },
+  mlPrediction: defaultPrediction,
 });
 
 export const PeriodProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { userId, isLoading: userLoading } = useUser();
   const [periods, setPeriods] = useState<PeriodData[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [mlPrediction, setMlPrediction] = useState<{
-    nextPeriod: { startDate: string; endDate: string } | null;
-    averageCycle: number | null;
-    confidence: number | null;
-  }>({
-    nextPeriod: null,
-    averageCycle: null,
-    confidence: null,
-  });
+  const [mlPrediction, setMlPrediction] = useState<PeriodPrediction>(defaultPrediction);
 
   useEffect(() => {
     const savedPeriods = localStorage.getItem('periodData');
@@ -97,17 +92,77 @@ export const PeriodProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           try {
             const mlData = await predictNextPeriodML(userId);
             if (mlData) {
-              setMlPrediction({
-                nextPeriod: {
-                  startDate: mlData.next_start_date,
-                  endDate: mlData.next_end_date,
-                },
-                averageCycle: mlData.average_cycle,
-                confidence: mlData.confidence,
-              });
+              setMlPrediction(mlData);
             }
           } catch (mlError) {
             console.error('Error getting ML prediction:', mlError);
+          }
+        } else if (data.length >= 2) {
+          // Calculate basic statistics without ML for limited data
+          const sortedPeriods = [...data].sort(
+            (a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime()
+          );
+          
+          // Calculate cycle lengths
+          const cycleLengths: number[] = [];
+          for (let i = 1; i < sortedPeriods.length; i++) {
+            const current = new Date(sortedPeriods[i].start_date);
+            const previous = new Date(sortedPeriods[i-1].start_date);
+            const difference = Math.round((current.getTime() - previous.getTime()) / (1000 * 60 * 60 * 24));
+            
+            if (difference > 0 && difference < 60) { // Ignore outliers
+              cycleLengths.push(difference);
+            }
+          }
+          
+          if (cycleLengths.length > 0) {
+            const averageCycle = Math.round(cycleLengths.reduce((sum, length) => sum + length, 0) / cycleLengths.length);
+            const shortestCycle = Math.min(...cycleLengths);
+            const longestCycle = Math.max(...cycleLengths);
+            
+            const lastPeriod = sortedPeriods[sortedPeriods.length - 1];
+            const lastStartDate = new Date(lastPeriod.start_date);
+            
+            const nextStartDate = new Date(lastStartDate);
+            nextStartDate.setDate(lastStartDate.getDate() + averageCycle);
+            
+            const averageDuration = Math.round(
+              sortedPeriods.reduce((sum, period) => {
+                const start = new Date(period.start_date);
+                const end = new Date(period.end_date);
+                return sum + (Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+              }, 0) / sortedPeriods.length
+            );
+            
+            const nextEndDate = new Date(nextStartDate);
+            nextEndDate.setDate(nextStartDate.getDate() + averageDuration - 1);
+            
+            // Calculate ovulation (typically 14 days before next period)
+            const ovulationDate = new Date(nextStartDate);
+            ovulationDate.setDate(nextStartDate.getDate() - 14);
+            
+            // Calculate fertility window
+            const fertileStart = new Date(ovulationDate);
+            fertileStart.setDate(ovulationDate.getDate() - 5);
+            
+            const fertileEnd = new Date(ovulationDate);
+            fertileEnd.setDate(ovulationDate.getDate() + 1);
+            
+            setMlPrediction({
+              nextPeriod: {
+                startDate: nextStartDate.toISOString().split('T')[0],
+                endDate: nextEndDate.toISOString().split('T')[0],
+              },
+              averageCycle,
+              shortestCycle,
+              longestCycle,
+              ovulationDate: ovulationDate.toISOString().split('T')[0],
+              fertilityWindow: {
+                start: fertileStart.toISOString().split('T')[0],
+                end: fertileEnd.toISOString().split('T')[0],
+              },
+              confidence: sortedPeriods.length >= 3 ? 0.6 : 0.4,
+            });
           }
         }
         
@@ -181,14 +236,7 @@ export const PeriodProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         try {
           const mlData = await predictNextPeriodML(userId);
           if (mlData) {
-            setMlPrediction({
-              nextPeriod: {
-                startDate: mlData.next_start_date,
-                endDate: mlData.next_end_date,
-              },
-              averageCycle: mlData.average_cycle,
-              confidence: mlData.confidence,
-            });
+            setMlPrediction(mlData);
           }
         } catch (mlError) {
           console.error('Error getting ML prediction:', mlError);

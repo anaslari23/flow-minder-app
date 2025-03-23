@@ -45,18 +45,23 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Create function to predict next period with ML
+-- Create function to predict next period with ML and enhanced statistics
 CREATE OR REPLACE FUNCTION predict_next_period(user_id UUID)
 RETURNS JSON AS $$
 DECLARE
   latest_period RECORD;
   avg_cycle NUMERIC;
   avg_duration NUMERIC;
+  shortest_cycle NUMERIC;
+  longest_cycle NUMERIC;
   predicted_start DATE;
   predicted_end DATE;
   cycle_regularity NUMERIC;
   confidence NUMERIC;
   total_periods INTEGER;
+  ovulation_date DATE;
+  fertility_window_start DATE;
+  fertility_window_end DATE;
   result JSON;
 BEGIN
   -- Get the latest period
@@ -83,6 +88,18 @@ BEGIN
   FROM periods
   WHERE periods.user_id = predict_next_period.user_id
   INTO avg_duration;
+  
+  -- Calculate shortest and longest cycles
+  SELECT MIN(next_start - start_date), MAX(next_start - start_date)
+  FROM (
+    SELECT 
+      start_date,
+      LEAD(start_date) OVER (ORDER BY start_date) as next_start
+    FROM periods
+    WHERE periods.user_id = predict_next_period.user_id
+  ) as cycle_data
+  WHERE next_start IS NOT NULL AND (next_start - start_date) BETWEEN 20 AND 45
+  INTO shortest_cycle, longest_cycle;
   
   -- Calculate cycle regularity (standard deviation / mean)
   SELECT STDDEV(next_start - start_date) / AVG(next_start - start_date)
@@ -119,12 +136,26 @@ BEGIN
   predicted_start := latest_period.start_date + (avg_cycle::INTEGER)::INTEGER;
   predicted_end := predicted_start + (avg_duration::INTEGER - 1)::INTEGER;
   
+  -- Calculate ovulation date (typically 14 days before next period)
+  ovulation_date := predicted_start - 14;
+  
+  -- Calculate fertility window (5 days before ovulation and day of ovulation + 1 day after)
+  fertility_window_start := ovulation_date - 5;
+  fertility_window_end := ovulation_date + 1;
+  
   -- Return JSON result
   result := json_build_object(
     'next_start_date', predicted_start,
     'next_end_date', predicted_end,
     'average_cycle', ROUND(avg_cycle::NUMERIC, 1),
     'average_duration', ROUND(avg_duration::NUMERIC, 1),
+    'shortest_cycle', shortest_cycle,
+    'longest_cycle', longest_cycle,
+    'ovulation_date', ovulation_date,
+    'fertility_window', json_build_object(
+      'start', fertility_window_start,
+      'end', fertility_window_end
+    ),
     'confidence', confidence,
     'total_periods', total_periods
   );
