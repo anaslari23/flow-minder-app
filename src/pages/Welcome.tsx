@@ -33,6 +33,9 @@ const Welcome: React.FC = () => {
     show: { opacity: 1, y: 0, transition: { duration: 0.5 } }
   };
 
+  // Default name to use if user data isn't available
+  const displayName = userData?.name || 'Friend';
+
   return (
     <Layout>
       <motion.div
@@ -57,7 +60,7 @@ const Welcome: React.FC = () => {
             className="text-4xl font-medium mb-10 text-period"
             variants={item}
           >
-            {userData.name || 'User'}
+            {displayName}
           </motion.h2>
         )}
         

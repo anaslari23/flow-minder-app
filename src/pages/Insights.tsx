@@ -3,28 +3,38 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { format, differenceInDays } from 'date-fns';
-import { ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon, AlertCircleIcon } from 'lucide-react';
+import { ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon, AlertCircleIcon, PlusIcon } from 'lucide-react';
 import Layout from '@/components/Layout';
 import { usePeriods } from '@/contexts/PeriodContext';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { toast } from 'sonner';
 
 const Insights: React.FC = () => {
   const navigate = useNavigate();
   const { periods, predictNextPeriod, isLoading, mlPrediction } = usePeriods();
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [predictionData, setPredictionData] = useState<{ startDate: string; endDate: string } | null>(null);
+  const [showNoDataMessage, setShowNoDataMessage] = useState(false);
   
   // Fetch prediction data when component mounts or periods change
   useEffect(() => {
     const fetchPrediction = async () => {
       const prediction = await predictNextPeriod();
       setPredictionData(prediction);
+      
+      // Show message if not enough data
+      if (periods.length < 2 && !isLoading) {
+        setShowNoDataMessage(true);
+      } else {
+        setShowNoDataMessage(false);
+      }
     };
     
     fetchPrediction();
-  }, [periods, predictNextPeriod]);
+  }, [periods, predictNextPeriod, isLoading]);
   
   // Calculate average cycle length
   const calculateAverageCycle = () => {
@@ -63,15 +73,20 @@ const Insights: React.FC = () => {
     if (periods.length === 0) return null;
     
     let totalDuration = 0;
+    let periodCount = 0;
     
     periods.forEach(period => {
       const start = new Date(period.startDate);
       const end = new Date(period.endDate);
       const duration = Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-      totalDuration += duration;
+      
+      if (duration > 0 && duration < 15) { // Ignore outliers
+        totalDuration += duration;
+        periodCount++;
+      }
     });
     
-    return Math.round(totalDuration / periods.length);
+    return periodCount > 0 ? Math.round(totalDuration / periodCount) : 5; // Default to 5 days if no valid data
   };
   
   const averageCycle = calculateAverageCycle();
@@ -158,6 +173,11 @@ const Insights: React.FC = () => {
   const daysUntilNext = predictionData ? 
     differenceInDays(new Date(predictionData.startDate), new Date()) : 
     null;
+    
+  const handleAddPeriod = () => {
+    navigate('/add-period');
+    toast.info('Add at least 2-3 periods for accurate predictions');
+  };
 
   return (
     <Layout>
@@ -178,6 +198,23 @@ const Insights: React.FC = () => {
           </Button>
           <h1 className="text-2xl font-medium">Insights</h1>
         </div>
+        
+        {showNoDataMessage && (
+          <Alert className="mb-6 bg-amber-50 border-amber-200">
+            <AlertCircleIcon className="h-4 w-4 text-amber-500" />
+            <AlertDescription className="text-amber-800">
+              Add at least 2-3 periods for accurate predictions and insights.
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="ml-2 border-amber-500 text-amber-700 hover:bg-amber-100"
+                onClick={handleAddPeriod}
+              >
+                <PlusIcon className="h-3.5 w-3.5 mr-1" /> Add Period
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
         
         <div className="bg-secondary rounded-2xl p-6 mb-6">
           <div className="flex justify-between items-center mb-4">
@@ -345,7 +382,7 @@ const Insights: React.FC = () => {
                   <div 
                     className="h-full bg-gradient-to-r from-yellow-500 to-green-500" 
                     style={{ 
-                      width: `${mlPrediction.confidence ? mlPrediction.confidence * 100 : periods.length > 3 ? 70 : 40}%` 
+                      width: `${mlPrediction.confidence ? mlPrediction.confidence * 100 : periods.length > 3 ? 70 : periods.length > 1 ? 40 : 20}%` 
                     }}
                   />
                 </div>
@@ -354,7 +391,11 @@ const Insights: React.FC = () => {
                   <span>
                     {mlPrediction.confidence 
                       ? `${Math.round(mlPrediction.confidence * 100)}% accuracy` 
-                      : periods.length > 3 ? 'Good accuracy' : 'Needs more data'}
+                      : periods.length > 3 
+                        ? 'Good accuracy' 
+                        : periods.length > 1 
+                          ? 'Limited accuracy' 
+                          : 'Add more periods'}
                   </span>
                   <span>High</span>
                 </div>

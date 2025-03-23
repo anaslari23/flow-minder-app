@@ -19,9 +19,17 @@ export const supabase = createClient(supabaseUrl, supabaseKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
-    detectSessionInUrl: true
+    detectSessionInUrl: true,
+    storageKey: 'period-tracker-auth',
+    debug: false
   }
 });
+
+// Check if using local-only mode (when Supabase is not properly configured)
+export const isLocalMode = () => {
+  return supabaseUrl === 'https://your-actual-project-url.supabase.co' || 
+         supabaseKey === 'your-actual-anon-key';
+};
 
 // Types for database tables
 export type UserProfile = {
@@ -44,28 +52,38 @@ export type PeriodRecord = {
   created_at: string;
 }
 
-// ML prediction utility
+// ML prediction utility with enhanced error handling
 export const predictNextPeriodML = async (userId: string) => {
-  const { data, error } = await supabase
-    .rpc('predict_next_period', { user_id: userId });
-  
-  if (error) {
-    console.error('Error predicting next period:', error);
+  try {
+    const { data, error } = await supabase
+      .rpc('predict_next_period', { user_id: userId });
+    
+    if (error) {
+      console.error('Error predicting next period:', error);
+      return null;
+    }
+    
+    return data;
+  } catch (e) {
+    console.error('Failed to execute ML prediction:', e);
     return null;
   }
-  
-  return data;
 };
 
-// Calculate average cycle with ML enhancement
+// Calculate average cycle with ML enhancement with enhanced error handling
 export const calculateCycleWithML = async (userId: string) => {
-  const { data, error } = await supabase
-    .rpc('calculate_cycle_ml', { user_id: userId });
-  
-  if (error) {
-    console.error('Error calculating cycle with ML:', error);
+  try {
+    const { data, error } = await supabase
+      .rpc('calculate_cycle_ml', { user_id: userId });
+    
+    if (error) {
+      console.error('Error calculating cycle with ML:', error);
+      return null;
+    }
+    
+    return data;
+  } catch (e) {
+    console.error('Failed to execute ML cycle calculation:', e);
     return null;
   }
-  
-  return data;
 };

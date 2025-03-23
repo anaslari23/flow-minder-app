@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useUser } from './UserContext';
 import { supabase, predictNextPeriodML, calculateCycleWithML } from '@/lib/supabase';
+import { toast } from 'sonner';
 
 export type PeriodData = {
   id: string;
@@ -56,6 +57,13 @@ export const PeriodProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   });
 
   useEffect(() => {
+    const savedPeriods = localStorage.getItem('periodData');
+    if (savedPeriods) {
+      setPeriods(JSON.parse(savedPeriods));
+    }
+  }, []);
+
+  useEffect(() => {
     const fetchPeriods = async () => {
       if (!userId || userLoading) return;
       
@@ -68,7 +76,10 @@ export const PeriodProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           .eq('user_id', userId)
           .order('start_date', { ascending: false });
         
-        if (error) throw error;
+        if (error) {
+          console.error('Error fetching periods:', error);
+          throw error;
+        }
         
         const transformedData = data.map(period => ({
           id: period.id,
@@ -80,27 +91,29 @@ export const PeriodProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         }));
         
         setPeriods(transformedData);
+        localStorage.setItem('periodData', JSON.stringify(transformedData));
         
         if (data.length >= 3) {
-          const mlData = await predictNextPeriodML(userId);
-          if (mlData) {
-            setMlPrediction({
-              nextPeriod: {
-                startDate: mlData.next_start_date,
-                endDate: mlData.next_end_date,
-              },
-              averageCycle: mlData.average_cycle,
-              confidence: mlData.confidence,
-            });
+          try {
+            const mlData = await predictNextPeriodML(userId);
+            if (mlData) {
+              setMlPrediction({
+                nextPeriod: {
+                  startDate: mlData.next_start_date,
+                  endDate: mlData.next_end_date,
+                },
+                averageCycle: mlData.average_cycle,
+                confidence: mlData.confidence,
+              });
+            }
+          } catch (mlError) {
+            console.error('Error getting ML prediction:', mlError);
           }
         }
         
       } catch (error) {
         console.error('Error fetching periods:', error);
-        const savedPeriods = localStorage.getItem('periodData');
-        if (savedPeriods) {
-          setPeriods(JSON.parse(savedPeriods));
-        }
+        // We'll keep using localStorage data in this case (already set in the earlier useEffect)
       } finally {
         setIsLoading(false);
       }
@@ -109,15 +122,27 @@ export const PeriodProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     fetchPeriods();
   }, [userId, userLoading]);
 
-  useEffect(() => {
-    if (periods.length > 0) {
-      localStorage.setItem('periodData', JSON.stringify(periods));
-    }
-  }, [periods]);
-
   const addPeriod = async (period: Omit<PeriodData, 'id'>) => {
     try {
-      if (!userId) return;
+      if (!userId) {
+        const newPeriod = {
+          id: Date.now().toString(),
+          ...period,
+        };
+        
+        const updatedPeriods = [newPeriod, ...periods];
+        setPeriods(updatedPeriods);
+        localStorage.setItem('periodData', JSON.stringify(updatedPeriods));
+        
+        if (updatedPeriods.length < 3) {
+          toast.info('Add more periods for better predictions', {
+            description: 'We need at least 3 periods for accurate predictions',
+            duration: 5000,
+          });
+        }
+        
+        return;
+      }
       
       const { data, error } = await supabase
         .from('periods')
@@ -143,29 +168,51 @@ export const PeriodProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         mood: data.mood,
       };
       
-      setPeriods(prev => [newPeriod, ...prev]);
+      const updatedPeriods = [newPeriod, ...periods];
+      setPeriods(updatedPeriods);
+      localStorage.setItem('periodData', JSON.stringify(updatedPeriods));
       
-      if (periods.length >= 2) {
-        const mlData = await predictNextPeriodML(userId);
-        if (mlData) {
-          setMlPrediction({
-            nextPeriod: {
-              startDate: mlData.next_start_date,
-              endDate: mlData.next_end_date,
-            },
-            averageCycle: mlData.average_cycle,
-            confidence: mlData.confidence,
-          });
+      if (updatedPeriods.length < 3) {
+        toast.info('Add more periods for better predictions', {
+          description: 'We need at least 3 periods for accurate predictions',
+          duration: 5000,
+        });
+      } else {
+        try {
+          const mlData = await predictNextPeriodML(userId);
+          if (mlData) {
+            setMlPrediction({
+              nextPeriod: {
+                startDate: mlData.next_start_date,
+                endDate: mlData.next_end_date,
+              },
+              averageCycle: mlData.average_cycle,
+              confidence: mlData.confidence,
+            });
+          }
+        } catch (mlError) {
+          console.error('Error getting ML prediction:', mlError);
         }
       }
       
     } catch (error) {
       console.error('Error adding period:', error);
+      
       const newPeriod = {
         id: Date.now().toString(),
         ...period,
       };
-      setPeriods(prev => [...prev, newPeriod]);
+      
+      const updatedPeriods = [newPeriod, ...periods];
+      setPeriods(updatedPeriods);
+      localStorage.setItem('periodData', JSON.stringify(updatedPeriods));
+      
+      if (updatedPeriods.length < 3) {
+        toast.info('Add more periods for better predictions', {
+          description: 'We need at least 3 periods for accurate predictions',
+          duration: 5000,
+        });
+      }
     }
   };
 
@@ -258,7 +305,9 @@ export const PeriodProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return mlPrediction.nextPeriod;
     }
     
-    if (periods.length < 2) return null;
+    if (periods.length < 2) {
+      return null;
+    }
     
     const sortedPeriods = [...periods].sort(
       (a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime()
