@@ -15,7 +15,13 @@ if (supabaseKey === 'your-actual-anon-key') {
 }
 
 // Create Supabase client
-export const supabase = createClient(supabaseUrl, supabaseKey);
+export const supabase = createClient(supabaseUrl, supabaseKey, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true
+  }
+});
 
 // Types for database tables
 export type UserProfile = {

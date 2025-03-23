@@ -1,6 +1,7 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase, UserProfile } from '@/lib/supabase';
+import { toast } from 'sonner';
 
 type UserData = {
   name: string;
@@ -43,19 +44,52 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     const fetchUserData = async () => {
       try {
+        setIsLoading(true);
+        
+        // Try to get existing session
         const { data: { session } } = await supabase.auth.getSession();
+        
         if (!session) {
-          const { data: { session: anonSession }, error } = await supabase.auth.signUp({
-            email: `${Date.now()}@anonymous.com`,
-            password: crypto.randomUUID(),
-          });
-          
-          if (error) throw error;
-          
-          if (anonSession?.user) {
-            setUserId(anonSession.user.id);
+          // Create anonymous session if none exists
+          try {
+            const { data: { session: anonSession }, error } = await supabase.auth.signUp({
+              email: `anonymous_${Date.now()}@example.com`,
+              password: crypto.randomUUID(),
+            });
+            
+            if (error) throw error;
+            
+            if (anonSession?.user) {
+              setUserId(anonSession.user.id);
+              
+              // Create empty user profile for the new anonymous user
+              await supabase
+                .from('user_profiles')
+                .upsert({
+                  id: anonSession.user.id,
+                  name: 'User',
+                  date_of_birth: new Date().toISOString(),
+                  onboarded: false,
+                  created_at: new Date().toISOString(),
+                });
+              
+              setUserData({
+                ...defaultUserData,
+                name: 'User'
+              });
+            }
+          } catch (anonError) {
+            console.error('Error creating anonymous session:', anonError);
+            // Fallback to memory-only mode
+            const tempId = `local_${Date.now()}`;
+            setUserId(tempId);
+            setUserData({
+              ...defaultUserData,
+              name: 'User'
+            });
           }
         } else {
+          // Use existing session
           setUserId(session.user.id);
           
           const { data, error } = await supabase
@@ -65,21 +99,46 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
             .single();
           
           if (error && error.code !== 'PGRST116') {
-            throw error;
+            // If no profile exists yet, create one
+            if (error.code === 'PGRST116') {
+              await supabase
+                .from('user_profiles')
+                .upsert({
+                  id: session.user.id,
+                  name: 'User',
+                  date_of_birth: new Date().toISOString(),
+                  onboarded: false,
+                  created_at: new Date().toISOString(),
+                });
+              
+              setUserData({
+                ...defaultUserData,
+                name: 'User'
+              });
+            } else {
+              throw error;
+            }
           }
           
           if (data) {
             setUserData({
-              name: data.name,
-              dateOfBirth: data.date_of_birth,
-              occupation: data.occupation,
-              onboarded: data.onboarded,
+              name: data.name || 'User',
+              dateOfBirth: data.date_of_birth || new Date().toISOString(),
+              occupation: data.occupation || '',
+              onboarded: data.onboarded || false,
             });
-            setIsOnboarded(data.onboarded);
+            setIsOnboarded(data.onboarded || false);
           }
         }
       } catch (error) {
         console.error('Error fetching user data:', error);
+        // Load from localStorage if available
+        const storedData = localStorage.getItem('userData');
+        if (storedData) {
+          const parsedData = JSON.parse(storedData);
+          setUserData(parsedData);
+          setIsOnboarded(parsedData.onboarded || false);
+        }
       } finally {
         setIsLoading(false);
       }
@@ -99,6 +158,13 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setIsOnboarded(data.onboarded);
       }
       
+      // Store in localStorage as fallback
+      localStorage.setItem('userData', JSON.stringify(updatedData));
+      
+      if (userId.startsWith('local_')) {
+        return; // Don't try to update Supabase for local IDs
+      }
+      
       const { error } = await supabase
         .from('user_profiles')
         .upsert({
@@ -114,7 +180,8 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
     } catch (error) {
       console.error('Error updating user data:', error);
-      // Create a proper reference to the updated data before using it
+      toast.error('Failed to save data to server. Changes saved locally.');
+      // Create a proper reference to the updated data
       const localUpdatedData = { ...userData, ...data };
       localStorage.setItem('userData', JSON.stringify(localUpdatedData));
     }

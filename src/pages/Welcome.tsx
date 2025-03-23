@@ -1,14 +1,15 @@
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import Layout from '@/components/Layout';
 import { useUser } from '@/contexts/UserContext';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 
 const Welcome: React.FC = () => {
   const navigate = useNavigate();
-  const { userData, setIsOnboarded } = useUser();
+  const { userData, setIsOnboarded, isLoading } = useUser();
 
   const handleGetStarted = () => {
     setIsOnboarded(true);
@@ -47,12 +48,18 @@ const Welcome: React.FC = () => {
           Welcome
         </motion.h1>
         
-        <motion.h2 
-          className="text-4xl font-medium mb-10 text-period"
-          variants={item}
-        >
-          {userData.name || 'User'}
-        </motion.h2>
+        {isLoading ? (
+          <motion.div variants={item}>
+            <Skeleton className="h-12 w-40 mb-10" />
+          </motion.div>
+        ) : (
+          <motion.h2 
+            className="text-4xl font-medium mb-10 text-period"
+            variants={item}
+          >
+            {userData.name || 'User'}
+          </motion.h2>
+        )}
         
         <motion.div variants={item}>
           <Button 
