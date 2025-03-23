@@ -1,35 +1,61 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { format, addDays, differenceInDays } from 'date-fns';
+import { format, differenceInDays } from 'date-fns';
 import { CalendarIcon, ChevronDownIcon, BarChart3Icon, PlusCircleIcon } from 'lucide-react';
 import Layout from '@/components/Layout';
 import { useUser } from '@/contexts/UserContext';
 import { usePeriods } from '@/contexts/PeriodContext';
 import { Button } from '@/components/ui/button';
-import { DatePickerInput } from '@/components/FormComponents';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { toast } from '@/components/ui/use-toast';
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
-  const { userData } = useUser();
-  const { periods, latestPeriod, predictNextPeriod } = usePeriods();
+  const { userData, isLoading: userLoading } = useUser();
+  const { periods, latestPeriod, predictNextPeriod, isLoading: periodsLoading, mlPrediction } = usePeriods();
   const [mood, setMood] = useState<string>('');
+  const [prediction, setPrediction] = useState<{ startDate: string; endDate: string } | null>(null);
+  
+  const isLoading = userLoading || periodsLoading;
+  
+  // Fetch prediction when component mounts
+  useEffect(() => {
+    const fetchPrediction = async () => {
+      const pred = await predictNextPeriod();
+      setPrediction(pred);
+    };
+    
+    fetchPrediction();
+  }, [predictNextPeriod, periods]);
   
   const moodOptions = [
-    { label: 'Happy', value: 'happy' },
-    { label: 'Normal', value: 'normal' },
-    { label: 'Tired', value: 'tired' },
-    { label: 'Stressed', value: 'stressed' },
-    { label: 'Energetic', value: 'energetic' },
+    { label: 'Happy', value: 'happy', icon: '😊' },
+    { label: 'Normal', value: 'normal', icon: '😐' },
+    { label: 'Tired', value: 'tired', icon: '😴' },
+    { label: 'Stressed', value: 'stressed', icon: '😰' },
+    { label: 'Energetic', value: 'energetic', icon: '⚡' },
   ];
 
-  const prediction = predictNextPeriod();
+  const saveMood = () => {
+    if (!mood) return;
+    
+    // In a real app, you'd save this to the database
+    toast({
+      title: "Mood saved",
+      description: `You're feeling ${moodOptions.find(m => m.value === mood)?.label.toLowerCase()} today`,
+    });
+  };
   
-  // Calculate days until next period
-  const daysUntilNext = prediction ? 
-    differenceInDays(new Date(prediction.startDate), new Date()) : 
+  // Calculate days until next period - prefer ML prediction if available
+  const nextPrediction = mlPrediction.nextPeriod && mlPrediction.confidence && mlPrediction.confidence > 0.7 
+    ? mlPrediction.nextPeriod 
+    : prediction;
+    
+  const daysUntilNext = nextPrediction ? 
+    differenceInDays(new Date(nextPrediction.startDate), new Date()) : 
     null;
 
   return (
@@ -47,8 +73,17 @@ const Dashboard: React.FC = () => {
           transition={{ duration: 0.5, delay: 0.2 }}
         >
           <div>
-            <h1 className="text-2xl font-medium">Hello, {userData.name}</h1>
-            <p className="text-muted-foreground">Track your cycle today</p>
+            {isLoading ? (
+              <>
+                <Skeleton className="h-8 w-32 mb-2" />
+                <Skeleton className="h-4 w-40" />
+              </>
+            ) : (
+              <>
+                <h1 className="text-2xl font-medium">Hello, {userData.name}</h1>
+                <p className="text-muted-foreground">Track your cycle today</p>
+              </>
+            )}
           </div>
           <div className="flex space-x-2">
             <Button
@@ -75,7 +110,14 @@ const Dashboard: React.FC = () => {
                 variant="outline" 
                 className="w-full justify-between bg-muted border-0"
               >
-                {mood ? moodOptions.find(option => option.value === mood)?.label : "Select your mood"}
+                {mood ? (
+                  <span className="flex items-center">
+                    <span className="mr-2">
+                      {moodOptions.find(option => option.value === mood)?.icon}
+                    </span>
+                    {moodOptions.find(option => option.value === mood)?.label}
+                  </span>
+                ) : "Select your mood"}
                 <ChevronDownIcon className="h-4 w-4 opacity-50" />
               </Button>
             </PopoverTrigger>
@@ -84,9 +126,13 @@ const Dashboard: React.FC = () => {
                 {moodOptions.map((option) => (
                   <div
                     key={option.value}
-                    className="px-4 py-2 cursor-pointer hover:bg-muted"
-                    onClick={() => setMood(option.value)}
+                    className="px-4 py-2 cursor-pointer hover:bg-muted flex items-center"
+                    onClick={() => {
+                      setMood(option.value);
+                      saveMood();
+                    }}
                   >
+                    <span className="mr-2">{option.icon}</span>
                     {option.label}
                   </div>
                 ))}
@@ -104,7 +150,22 @@ const Dashboard: React.FC = () => {
         >
           <h2 className="text-lg font-medium mb-4">Last Period</h2>
           <div className="bg-secondary p-6 rounded-2xl">
-            {latestPeriod ? (
+            {isLoading ? (
+              <div className="space-y-4">
+                <div className="flex justify-between">
+                  <Skeleton className="h-5 w-20" />
+                  <Skeleton className="h-5 w-24" />
+                </div>
+                <div className="flex justify-between">
+                  <Skeleton className="h-5 w-20" />
+                  <Skeleton className="h-5 w-24" />
+                </div>
+                <div className="flex justify-between">
+                  <Skeleton className="h-5 w-20" />
+                  <Skeleton className="h-5 w-16" />
+                </div>
+              </div>
+            ) : latestPeriod ? (
               <div className="space-y-2">
                 <div className="flex justify-between">
                   <span>Start Date</span>
@@ -131,28 +192,48 @@ const Dashboard: React.FC = () => {
         </motion.div>
         
         {/* Next predicted period */}
-        {prediction && (
-          <motion.div
-            className="mb-8"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.8 }}
-          >
-            <h2 className="text-lg font-medium mb-4">Next Period Prediction</h2>
-            <div className="bg-secondary p-6 rounded-2xl">
+        <motion.div
+          className="mb-8"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.8 }}
+        >
+          <h2 className="text-lg font-medium mb-4">Next Period Prediction</h2>
+          <div className="bg-secondary p-6 rounded-2xl">
+            {isLoading ? (
+              <div className="space-y-4">
+                <div className="flex justify-between">
+                  <Skeleton className="h-5 w-24" />
+                  <Skeleton className="h-5 w-24" />
+                </div>
+                <div className="flex justify-between">
+                  <Skeleton className="h-5 w-20" />
+                  <Skeleton className="h-5 w-16" />
+                </div>
+              </div>
+            ) : nextPrediction ? (
               <div className="space-y-2">
                 <div className="flex justify-between">
                   <span>Expected Start</span>
-                  <span className="font-medium">{format(new Date(prediction.startDate), 'MMM d, yyyy')}</span>
+                  <span className="font-medium">
+                    {format(new Date(nextPrediction.startDate), 'MMM d, yyyy')}
+                    {mlPrediction.confidence && mlPrediction.confidence > 0.8 && (
+                      <span className="ml-2 text-xs text-green-500">(ML enhanced)</span>
+                    )}
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span>Days Until</span>
                   <span className="font-medium text-period">{daysUntilNext} days</span>
                 </div>
               </div>
-            </div>
-          </motion.div>
-        )}
+            ) : (
+              <p className="text-center text-muted-foreground">
+                Add more period data to enable predictions
+              </p>
+            )}
+          </div>
+        </motion.div>
         
         <motion.div
           initial={{ opacity: 0, y: 20 }}

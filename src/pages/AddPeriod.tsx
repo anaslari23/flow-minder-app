@@ -8,6 +8,9 @@ import { usePeriods } from '@/contexts/PeriodContext';
 import { Button } from '@/components/ui/button';
 import { DatePickerInput, UnderlineInput } from '@/components/FormComponents';
 import { toast } from '@/components/ui/use-toast';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { ChevronDownIcon } from 'lucide-react';
 
 const AddPeriod: React.FC = () => {
   const navigate = useNavigate();
@@ -16,8 +19,39 @@ const AddPeriod: React.FC = () => {
   const [startDate, setStartDate] = useState<Date | undefined>(undefined);
   const [endDate, setEndDate] = useState<Date | undefined>(undefined);
   const [description, setDescription] = useState('');
+  const [symptoms, setSymptoms] = useState<string[]>([]);
+  const [mood, setMood] = useState<string>('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const symptomOptions = [
+    { label: 'Cramps', value: 'cramps' },
+    { label: 'Headache', value: 'headache' },
+    { label: 'Fatigue', value: 'fatigue' },
+    { label: 'Bloating', value: 'bloating' },
+    { label: 'Nausea', value: 'nausea' },
+    { label: 'Backache', value: 'backache' },
+    { label: 'Breast tenderness', value: 'breast-tenderness' },
+  ];
+  
+  const moodOptions = [
+    { label: 'Happy', value: 'happy', icon: '😊' },
+    { label: 'Normal', value: 'normal', icon: '😐' },
+    { label: 'Tired', value: 'tired', icon: '😴' },
+    { label: 'Stressed', value: 'stressed', icon: '😰' },
+    { label: 'Energetic', value: 'energetic', icon: '⚡' },
+    { label: 'Irritable', value: 'irritable', icon: '😠' },
+    { label: 'Sad', value: 'sad', icon: '😢' },
+  ];
+
+  const toggleSymptom = (value: string) => {
+    setSymptoms(prev => 
+      prev.includes(value)
+        ? prev.filter(s => s !== value)
+        : [...prev, value]
+    );
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!startDate || !endDate) {
@@ -38,18 +72,33 @@ const AddPeriod: React.FC = () => {
       return;
     }
     
-    addPeriod({
-      startDate: startDate.toISOString(),
-      endDate: endDate.toISOString(),
-      description,
-    });
+    setIsSubmitting(true);
     
-    toast({
-      title: "Period added",
-      description: "Your period information has been saved",
-    });
-    
-    navigate('/dashboard');
+    try {
+      await addPeriod({
+        startDate: startDate.toISOString(),
+        endDate: endDate.toISOString(),
+        description,
+        symptoms,
+        mood,
+      });
+      
+      toast({
+        title: "Period added",
+        description: "Your period information has been saved",
+      });
+      
+      navigate('/dashboard');
+    } catch (error) {
+      console.error('Error adding period:', error);
+      toast({
+        title: "Error",
+        description: "There was a problem saving your period data",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -77,6 +126,64 @@ const AddPeriod: React.FC = () => {
             label="End date?"
           />
           
+          <div className="mt-4">
+            <label className="text-sm text-muted-foreground block mb-2">Symptoms (optional)</label>
+            <div className="grid grid-cols-2 gap-2">
+              {symptomOptions.map(option => (
+                <div key={option.value} className="flex items-center space-x-2">
+                  <Checkbox 
+                    id={option.value} 
+                    checked={symptoms.includes(option.value)}
+                    onCheckedChange={() => toggleSymptom(option.value)}
+                  />
+                  <label 
+                    htmlFor={option.value}
+                    className="text-sm cursor-pointer"
+                  >
+                    {option.label}
+                  </label>
+                </div>
+              ))}
+            </div>
+          </div>
+          
+          <div className="mt-4">
+            <label className="text-sm text-muted-foreground block mb-2">Mood (optional)</label>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button 
+                  type="button"
+                  variant="outline" 
+                  className="w-full justify-between"
+                >
+                  {mood ? (
+                    <span className="flex items-center">
+                      <span className="mr-2">
+                        {moodOptions.find(option => option.value === mood)?.icon}
+                      </span>
+                      {moodOptions.find(option => option.value === mood)?.label}
+                    </span>
+                  ) : "Select your mood"}
+                  <ChevronDownIcon className="h-4 w-4 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-full p-0">
+                <div className="max-h-[200px] overflow-auto">
+                  {moodOptions.map((option) => (
+                    <div
+                      key={option.value}
+                      className="px-4 py-2 cursor-pointer hover:bg-muted flex items-center"
+                      onClick={() => setMood(option.value)}
+                    >
+                      <span className="mr-2">{option.icon}</span>
+                      {option.label}
+                    </div>
+                  ))}
+                </div>
+              </PopoverContent>
+            </Popover>
+          </div>
+          
           <div className="mt-6">
             <label className="text-sm text-muted-foreground mb-1 block">Description (optional)</label>
             <UnderlineInput
@@ -92,8 +199,9 @@ const AddPeriod: React.FC = () => {
             <Button 
               type="submit"
               className="w-full bg-period hover:bg-period-dark text-white py-6 rounded-full"
+              disabled={isSubmitting}
             >
-              Save Period
+              {isSubmitting ? "Saving..." : "Save Period"}
             </Button>
           </div>
         </form>

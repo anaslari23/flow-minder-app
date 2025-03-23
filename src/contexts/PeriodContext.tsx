@@ -1,5 +1,6 @@
-
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { useUser } from './UserContext';
+import { supabase, predictNextPeriodML, calculateCycleWithML } from '@/lib/supabase';
 
 export type PeriodData = {
   id: string;
@@ -12,65 +13,257 @@ export type PeriodData = {
 
 type PeriodContextType = {
   periods: PeriodData[];
-  addPeriod: (period: Omit<PeriodData, 'id'>) => void;
-  updatePeriod: (id: string, period: Partial<PeriodData>) => void;
-  deletePeriod: (id: string) => void;
+  addPeriod: (period: Omit<PeriodData, 'id'>) => Promise<void>;
+  updatePeriod: (id: string, period: Partial<PeriodData>) => Promise<void>;
+  deletePeriod: (id: string) => Promise<void>;
   latestPeriod: PeriodData | null;
-  predictNextPeriod: () => { startDate: string; endDate: string } | null;
+  predictNextPeriod: () => Promise<{ startDate: string; endDate: string } | null>;
+  isLoading: boolean;
+  mlPrediction: { 
+    nextPeriod: { startDate: string; endDate: string } | null;
+    averageCycle: number | null;
+    confidence: number | null;
+  };
 };
 
 const PeriodContext = createContext<PeriodContextType>({
   periods: [],
-  addPeriod: () => {},
-  updatePeriod: () => {},
-  deletePeriod: () => {},
+  addPeriod: async () => {},
+  updatePeriod: async () => {},
+  deletePeriod: async () => {},
   latestPeriod: null,
-  predictNextPeriod: () => null,
+  predictNextPeriod: async () => null,
+  isLoading: true,
+  mlPrediction: {
+    nextPeriod: null,
+    averageCycle: null,
+    confidence: null,
+  },
 });
 
 export const PeriodProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [periods, setPeriods] = useState<PeriodData[]>(() => {
-    const savedPeriods = localStorage.getItem('periodData');
-    return savedPeriods ? JSON.parse(savedPeriods) : [];
+  const { userId, isLoading: userLoading } = useUser();
+  const [periods, setPeriods] = useState<PeriodData[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [mlPrediction, setMlPrediction] = useState<{
+    nextPeriod: { startDate: string; endDate: string } | null;
+    averageCycle: number | null;
+    confidence: number | null;
+  }>({
+    nextPeriod: null,
+    averageCycle: null,
+    confidence: null,
   });
 
   useEffect(() => {
-    localStorage.setItem('periodData', JSON.stringify(periods));
+    const fetchPeriods = async () => {
+      if (!userId || userLoading) return;
+      
+      try {
+        setIsLoading(true);
+        
+        const { data, error } = await supabase
+          .from('periods')
+          .select('*')
+          .eq('user_id', userId)
+          .order('start_date', { ascending: false });
+        
+        if (error) throw error;
+        
+        const transformedData = data.map(period => ({
+          id: period.id,
+          startDate: period.start_date,
+          endDate: period.end_date,
+          description: period.description,
+          symptoms: period.symptoms,
+          mood: period.mood,
+        }));
+        
+        setPeriods(transformedData);
+        
+        if (data.length >= 3) {
+          const mlData = await predictNextPeriodML(userId);
+          if (mlData) {
+            setMlPrediction({
+              nextPeriod: {
+                startDate: mlData.next_start_date,
+                endDate: mlData.next_end_date,
+              },
+              averageCycle: mlData.average_cycle,
+              confidence: mlData.confidence,
+            });
+          }
+        }
+        
+      } catch (error) {
+        console.error('Error fetching periods:', error);
+        const savedPeriods = localStorage.getItem('periodData');
+        if (savedPeriods) {
+          setPeriods(JSON.parse(savedPeriods));
+        }
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    fetchPeriods();
+  }, [userId, userLoading]);
+
+  useEffect(() => {
+    if (periods.length > 0) {
+      localStorage.setItem('periodData', JSON.stringify(periods));
+    }
   }, [periods]);
 
-  const addPeriod = (period: Omit<PeriodData, 'id'>) => {
-    const newPeriod = {
-      id: Date.now().toString(),
-      ...period,
-    };
-    setPeriods(prev => [...prev, newPeriod]);
+  const addPeriod = async (period: Omit<PeriodData, 'id'>) => {
+    try {
+      if (!userId) return;
+      
+      const { data, error } = await supabase
+        .from('periods')
+        .insert({
+          user_id: userId,
+          start_date: period.startDate,
+          end_date: period.endDate,
+          description: period.description,
+          symptoms: period.symptoms,
+          mood: period.mood,
+        })
+        .select()
+        .single();
+      
+      if (error) throw error;
+      
+      const newPeriod = {
+        id: data.id,
+        startDate: data.start_date,
+        endDate: data.end_date,
+        description: data.description,
+        symptoms: data.symptoms,
+        mood: data.mood,
+      };
+      
+      setPeriods(prev => [newPeriod, ...prev]);
+      
+      if (periods.length >= 2) {
+        const mlData = await predictNextPeriodML(userId);
+        if (mlData) {
+          setMlPrediction({
+            nextPeriod: {
+              startDate: mlData.next_start_date,
+              endDate: mlData.next_end_date,
+            },
+            averageCycle: mlData.average_cycle,
+            confidence: mlData.confidence,
+          });
+        }
+      }
+      
+    } catch (error) {
+      console.error('Error adding period:', error);
+      const newPeriod = {
+        id: Date.now().toString(),
+        ...period,
+      };
+      setPeriods(prev => [...prev, newPeriod]);
+    }
   };
 
-  const updatePeriod = (id: string, periodUpdate: Partial<PeriodData>) => {
-    setPeriods(prev => 
-      prev.map(period => 
-        period.id === id ? { ...period, ...periodUpdate } : period
-      )
-    );
+  const updatePeriod = async (id: string, periodUpdate: Partial<PeriodData>) => {
+    try {
+      if (!userId) return;
+      
+      const { error } = await supabase
+        .from('periods')
+        .update({
+          start_date: periodUpdate.startDate,
+          end_date: periodUpdate.endDate,
+          description: periodUpdate.description,
+          symptoms: periodUpdate.symptoms,
+          mood: periodUpdate.mood,
+        })
+        .eq('id', id)
+        .eq('user_id', userId);
+      
+      if (error) throw error;
+      
+      setPeriods(prev => 
+        prev.map(period => 
+          period.id === id ? { ...period, ...periodUpdate } : period
+        )
+      );
+      
+      if (periods.length >= 2) {
+        const mlData = await predictNextPeriodML(userId);
+        if (mlData) {
+          setMlPrediction({
+            nextPeriod: {
+              startDate: mlData.next_start_date,
+              endDate: mlData.next_end_date,
+            },
+            averageCycle: mlData.average_cycle,
+            confidence: mlData.confidence,
+          });
+        }
+      }
+      
+    } catch (error) {
+      console.error('Error updating period:', error);
+      setPeriods(prev => 
+        prev.map(period => 
+          period.id === id ? { ...period, ...periodUpdate } : period
+        )
+      );
+    }
   };
 
-  const deletePeriod = (id: string) => {
-    setPeriods(prev => prev.filter(period => period.id !== id));
+  const deletePeriod = async (id: string) => {
+    try {
+      if (!userId) return;
+      
+      const { error } = await supabase
+        .from('periods')
+        .delete()
+        .eq('id', id)
+        .eq('user_id', userId);
+      
+      if (error) throw error;
+      
+      setPeriods(prev => prev.filter(period => period.id !== id));
+      
+      if (periods.length > 3) {
+        const mlData = await predictNextPeriodML(userId);
+        if (mlData) {
+          setMlPrediction({
+            nextPeriod: {
+              startDate: mlData.next_start_date,
+              endDate: mlData.next_end_date,
+            },
+            averageCycle: mlData.average_cycle,
+            confidence: mlData.confidence,
+          });
+        }
+      }
+      
+    } catch (error) {
+      console.error('Error deleting period:', error);
+      setPeriods(prev => prev.filter(period => period.id !== id));
+    }
   };
 
-  const latestPeriod = periods.length > 0 
-    ? periods.sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime())[0]
-    : null;
+  const latestPeriod = periods.length > 0 ? periods[0] : null;
 
-  const predictNextPeriod = () => {
+  const predictNextPeriod = async () => {
+    if (mlPrediction.nextPeriod && mlPrediction.confidence && mlPrediction.confidence > 0.7) {
+      return mlPrediction.nextPeriod;
+    }
+    
     if (periods.length < 2) return null;
     
-    // Sort periods by start date
     const sortedPeriods = [...periods].sort(
       (a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime()
     );
     
-    // Calculate average cycle length
     let totalDays = 0;
     let count = 0;
     
@@ -79,7 +272,7 @@ export const PeriodProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const previous = new Date(sortedPeriods[i-1].startDate);
       const difference = Math.round((current.getTime() - previous.getTime()) / (1000 * 60 * 60 * 24));
       
-      if (difference > 0 && difference < 60) { // Ignore outliers
+      if (difference > 0 && difference < 60) {
         totalDays += difference;
         count++;
       }
@@ -88,15 +281,13 @@ export const PeriodProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     if (count === 0) return null;
     
     const averageCycle = Math.round(totalDays / count);
-    const lastPeriod = latestPeriod;
     
-    if (!lastPeriod) return null;
+    if (!latestPeriod) return null;
     
-    const lastStartDate = new Date(lastPeriod.startDate);
+    const lastStartDate = new Date(latestPeriod.startDate);
     const nextStartDate = new Date(lastStartDate);
     nextStartDate.setDate(lastStartDate.getDate() + averageCycle);
     
-    // Calculate average period duration
     let totalDuration = 0;
     sortedPeriods.forEach(period => {
       const start = new Date(period.startDate);
@@ -123,7 +314,9 @@ export const PeriodProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       updatePeriod, 
       deletePeriod, 
       latestPeriod,
-      predictNextPeriod
+      predictNextPeriod,
+      isLoading,
+      mlPrediction,
     }}>
       {children}
     </PeriodContext.Provider>

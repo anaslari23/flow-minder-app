@@ -1,22 +1,38 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { format, differenceInDays, addDays } from 'date-fns';
-import { ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon } from 'lucide-react';
+import { format, differenceInDays } from 'date-fns';
+import { ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon, AlertCircleIcon } from 'lucide-react';
 import Layout from '@/components/Layout';
-import { usePeriods, PeriodData } from '@/contexts/PeriodContext';
+import { usePeriods } from '@/contexts/PeriodContext';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 const Insights: React.FC = () => {
   const navigate = useNavigate();
-  const { periods, predictNextPeriod } = usePeriods();
+  const { periods, predictNextPeriod, isLoading, mlPrediction } = usePeriods();
   const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [predictionData, setPredictionData] = useState<{ startDate: string; endDate: string } | null>(null);
   
-  const prediction = predictNextPeriod();
+  // Fetch prediction data when component mounts or periods change
+  useEffect(() => {
+    const fetchPrediction = async () => {
+      const prediction = await predictNextPeriod();
+      setPredictionData(prediction);
+    };
+    
+    fetchPrediction();
+  }, [periods, predictNextPeriod]);
   
   // Calculate average cycle length
   const calculateAverageCycle = () => {
+    // If we have ML prediction with good confidence, use it
+    if (mlPrediction.averageCycle && mlPrediction.confidence && mlPrediction.confidence > 0.6) {
+      return mlPrediction.averageCycle;
+    }
+    
     if (periods.length < 2) return null;
     
     // Sort periods by start date
@@ -99,9 +115,14 @@ const Insights: React.FC = () => {
         return date >= start && date <= end;
       });
       
-      const isPredictedPeriodDay = prediction && (
-        date >= new Date(prediction.startDate) && 
-        date <= new Date(prediction.endDate)
+      const isPredictedPeriodDay = predictionData && (
+        date >= new Date(predictionData.startDate) && 
+        date <= new Date(predictionData.endDate)
+      );
+      
+      const isMLPredictedDay = mlPrediction.nextPeriod && (
+        date >= new Date(mlPrediction.nextPeriod.startDate) && 
+        date <= new Date(mlPrediction.nextPeriod.endDate)
       );
       
       days.push(
@@ -110,9 +131,11 @@ const Insights: React.FC = () => {
           className={`h-8 w-8 flex items-center justify-center rounded-full text-sm ${
             isPeriodDay 
               ? 'bg-period text-white' 
-              : isPredictedPeriodDay 
-                ? 'bg-period-light text-period border border-period'
-                : ''
+              : isMLPredictedDay 
+                ? 'bg-purple-500/20 text-purple-500 border border-purple-500'
+                : isPredictedPeriodDay 
+                  ? 'bg-period-light text-period border border-period'
+                  : ''
           }`}
         >
           {i}
@@ -130,6 +153,11 @@ const Insights: React.FC = () => {
   const prevMonth = () => {
     setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1));
   };
+
+  // Calculate days until next period
+  const daysUntilNext = predictionData ? 
+    differenceInDays(new Date(predictionData.startDate), new Date()) : 
+    null;
 
   return (
     <Layout>
@@ -179,11 +207,19 @@ const Insights: React.FC = () => {
             ))}
           </div>
           
-          <div className="grid grid-cols-7 gap-1">
-            {renderCalendar()}
-          </div>
+          {isLoading ? (
+            <div className="grid grid-cols-7 gap-1">
+              {Array(35).fill(0).map((_, i) => (
+                <Skeleton key={i} className="h-8 w-8 rounded-full" />
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-7 gap-1">
+              {renderCalendar()}
+            </div>
+          )}
           
-          <div className="mt-4 flex space-x-4 text-xs">
+          <div className="mt-4 flex flex-wrap gap-4 text-xs">
             <div className="flex items-center">
               <div className="h-3 w-3 bg-period rounded-full mr-1"></div>
               <span>Period</span>
@@ -191,6 +227,10 @@ const Insights: React.FC = () => {
             <div className="flex items-center">
               <div className="h-3 w-3 bg-period-light border border-period rounded-full mr-1"></div>
               <span>Predicted</span>
+            </div>
+            <div className="flex items-center">
+              <div className="h-3 w-3 bg-purple-500/20 border border-purple-500 rounded-full mr-1"></div>
+              <span>ML Prediction</span>
             </div>
           </div>
         </div>
@@ -204,16 +244,42 @@ const Insights: React.FC = () => {
           >
             <div className="bg-secondary rounded-2xl p-4">
               <h3 className="text-sm text-muted-foreground mb-1">Next Period Prediction</h3>
-              <div className="text-lg font-medium">
-                {prediction ? format(new Date(prediction.startDate), 'MMM d') : 'N/A'}
-              </div>
+              {isLoading ? (
+                <Skeleton className="h-8 w-20" />
+              ) : (
+                <div className="text-lg font-medium flex items-center">
+                  {mlPrediction.nextPeriod ? (
+                    <>
+                      <span>{format(new Date(mlPrediction.nextPeriod.startDate), 'MMM d')}</span>
+                      {mlPrediction.confidence && mlPrediction.confidence > 0.8 && (
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger>
+                              <div className="ml-2 text-green-500">
+                                <AlertCircleIcon className="h-4 w-4" />
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>High confidence prediction ({Math.round(mlPrediction.confidence * 100)}%)</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      )}
+                    </>
+                  ) : predictionData ? format(new Date(predictionData.startDate), 'MMM d') : 'N/A'}
+                </div>
+              )}
             </div>
             
             <div className="bg-secondary rounded-2xl p-4">
-              <h3 className="text-sm text-muted-foreground mb-1">Ovulating Days</h3>
-              <div className="text-lg font-medium">
-                {averageCycle ? `~${Math.floor(averageCycle / 2)} days` : 'N/A'}
-              </div>
+              <h3 className="text-sm text-muted-foreground mb-1">Days Until Next</h3>
+              {isLoading ? (
+                <Skeleton className="h-8 w-16" />
+              ) : (
+                <div className="text-lg font-medium">
+                  {daysUntilNext !== null ? `${daysUntilNext} days` : 'N/A'}
+                </div>
+              )}
             </div>
           </motion.div>
           
@@ -225,17 +291,75 @@ const Insights: React.FC = () => {
           >
             <div className="bg-secondary rounded-2xl p-4">
               <h3 className="text-sm text-muted-foreground mb-1">Average Cycle</h3>
-              <div className="text-lg font-medium">
-                {averageCycle ? `${averageCycle} days` : 'N/A'}
-              </div>
+              {isLoading ? (
+                <Skeleton className="h-8 w-16" />
+              ) : (
+                <div className="text-lg font-medium flex items-center">
+                  {averageCycle ? (
+                    <>
+                      <span>{averageCycle} days</span>
+                      {mlPrediction.confidence && mlPrediction.confidence > 0.7 && (
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger>
+                              <div className="ml-2 text-green-500">
+                                <AlertCircleIcon className="h-4 w-4" />
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>ML enhanced prediction</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      )}
+                    </>
+                  ) : 'N/A'}
+                </div>
+              )}
             </div>
             
             <div className="bg-secondary rounded-2xl p-4">
               <h3 className="text-sm text-muted-foreground mb-1">Average Duration</h3>
-              <div className="text-lg font-medium">
-                {averageDuration ? `${averageDuration} days` : 'N/A'}
-              </div>
+              {isLoading ? (
+                <Skeleton className="h-8 w-16" />
+              ) : (
+                <div className="text-lg font-medium">
+                  {averageDuration ? `${averageDuration} days` : 'N/A'}
+                </div>
+              )}
             </div>
+          </motion.div>
+          
+          <motion.div
+            className="bg-secondary rounded-2xl p-4"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.4 }}
+          >
+            <h3 className="text-sm text-muted-foreground mb-1">Prediction Accuracy</h3>
+            {isLoading ? (
+              <Skeleton className="h-8 w-full" />
+            ) : (
+              <div className="mt-2">
+                <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
+                  <div 
+                    className="h-full bg-gradient-to-r from-yellow-500 to-green-500" 
+                    style={{ 
+                      width: `${mlPrediction.confidence ? mlPrediction.confidence * 100 : periods.length > 3 ? 70 : 40}%` 
+                    }}
+                  />
+                </div>
+                <div className="flex justify-between text-xs mt-1">
+                  <span>Low</span>
+                  <span>
+                    {mlPrediction.confidence 
+                      ? `${Math.round(mlPrediction.confidence * 100)}% accuracy` 
+                      : periods.length > 3 ? 'Good accuracy' : 'Needs more data'}
+                  </span>
+                  <span>High</span>
+                </div>
+              </div>
+            )}
           </motion.div>
         </div>
       </motion.div>
