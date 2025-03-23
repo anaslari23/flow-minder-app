@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase, UserProfile } from '@/lib/supabase';
 
@@ -40,14 +39,11 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [userId, setUserId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  // Fetch user data from Supabase
   useEffect(() => {
     const fetchUserData = async () => {
       try {
-        // Check if user is authenticated
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) {
-          // If no session exists, create an anonymous session
           const { data: { session: anonSession }, error } = await supabase.auth.signUp({
             email: `${Date.now()}@anonymous.com`,
             password: crypto.randomUUID(),
@@ -55,15 +51,12 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
           
           if (error) throw error;
           
-          // Set the user ID from the anonymous session
           if (anonSession?.user) {
             setUserId(anonSession.user.id);
           }
         } else {
-          // Set user ID from existing session
           setUserId(session.user.id);
           
-          // Fetch user profile data
           const { data, error } = await supabase
             .from('user_profiles')
             .select('*')
@@ -94,7 +87,6 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
     fetchUserData();
   }, []);
 
-  // Update user data in Supabase and local state
   const updateUserData = async (data: Partial<UserData>) => {
     try {
       if (!userId) return;
@@ -106,7 +98,6 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setIsOnboarded(data.onboarded);
       }
       
-      // Update or insert user profile in Supabase
       const { error } = await supabase
         .from('user_profiles')
         .upsert({
@@ -122,7 +113,6 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
     } catch (error) {
       console.error('Error updating user data:', error);
-      // Fallback to local storage in case of error
       localStorage.setItem('userData', JSON.stringify(updatedData));
     }
   };

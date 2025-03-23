@@ -11,6 +11,7 @@ import { toast } from '@/components/ui/use-toast';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { ChevronDownIcon } from 'lucide-react';
+import { Textarea } from '@/components/ui/textarea';
 
 const AddPeriod: React.FC = () => {
   const navigate = useNavigate();
@@ -186,12 +187,11 @@ const AddPeriod: React.FC = () => {
           
           <div className="mt-6">
             <label className="text-sm text-muted-foreground mb-1 block">Description (optional)</label>
-            <UnderlineInput
+            <Textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Notes about this period..."
-              className="h-20 align-top"
-              as="textarea"
+              className="h-20"
             />
           </div>
           
