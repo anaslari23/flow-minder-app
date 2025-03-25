@@ -103,16 +103,22 @@ export const DatePickerInput = forwardRef<
           className="w-auto p-0 bg-black border border-white/20 shadow-xl rounded-lg z-50" 
           align="start"
           sideOffset={5}
+          forceMount
+          onEscapeKeyDown={(e) => {
+            // Only close on Escape key
+            e.preventDefault();
+            setIsOpen(false);
+          }}
           onInteractOutside={(e) => {
-            // Prevent closing when clicking inside the calendar
+            // Completely prevent interaction outside closing the popover
             e.preventDefault();
           }}
           onPointerDownOutside={(e) => {
-            // Prevent closing when clicking inside the calendar
+            // Completely prevent pointer clicks outside closing the popover
             e.preventDefault();
           }}
           onFocusOutside={(e) => {
-            // Allow focus to move within the calendar without closing
+            // Completely prevent focus outside closing the popover
             e.preventDefault();
           }}
         >
@@ -122,7 +128,7 @@ export const DatePickerInput = forwardRef<
             onSelect={(date) => {
               if (date) {
                 onChange(date);
-                // Don't auto-close to allow user to interact with the calendar
+                // Explicitly don't close - let the user close manually
               }
             }}
             initialFocus
@@ -139,6 +145,7 @@ export const DatePickerInput = forwardRef<
               size="sm" 
               onClick={() => {
                 onChange(new Date());
+                // Don't close automatically - let user close manually
               }}
               className="text-xs hover:bg-white/10"
             >
