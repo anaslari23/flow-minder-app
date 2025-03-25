@@ -1,5 +1,8 @@
 **Mesntruation Date Tracker**
 
+**To try on your browser**
+visit - https://period-tracker-beta.vercel.app/
+
 
 **Use your preferred IDE**
 
@@ -47,6 +50,5 @@ This project is built with .
 - shadcn-ui
 - Tailwind CSS
 
-**To try on your browser**
-visit - https://period-tracker-beta.vercel.app/
+
 
