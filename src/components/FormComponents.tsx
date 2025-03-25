@@ -1,5 +1,4 @@
-
-import React, { forwardRef } from 'react';
+import React, { forwardRef, useState } from 'react';
 import { CalendarIcon, ChevronDownIcon, X } from 'lucide-react';
 import { format } from 'date-fns';
 import { Button } from '@/components/ui/button';
@@ -37,26 +36,54 @@ export const DatePickerInput = forwardRef<
     label?: string;
   }
 >(({ value, onChange, placeholder = "Select date", className, label }, ref) => {
+  const [isOpen, setIsOpen] = useState(false);
+  
   const handleClear = (e: React.MouseEvent) => {
     e.stopPropagation();
     onChange(undefined);
   };
 
+  const toggleCalendar = () => {
+    setIsOpen(!isOpen);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      toggleCalendar();
+    } else if (e.key === "Escape" && isOpen) {
+      setIsOpen(false);
+    } else if (e.key === "Tab" && isOpen) {
+      e.stopPropagation();
+    }
+  };
+
   return (
     <div className="mb-4 w-full">
-      {label && <label className="text-sm text-muted-foreground mb-1 block">{label}</label>}
-      <Popover>
+      {label && (
+        <label 
+          className="text-sm text-muted-foreground mb-1 block"
+          onClick={() => toggleCalendar()}
+        >
+          {label}
+        </label>
+      )}
+      <Popover open={isOpen} onOpenChange={setIsOpen}>
         <PopoverTrigger asChild>
           <Button
             ref={ref}
             variant="outline"
+            onClick={toggleCalendar}
+            onKeyDown={handleKeyDown}
+            aria-expanded={isOpen}
+            aria-haspopup="dialog"
             className={cn(
-              "w-full justify-start text-left font-normal bg-transparent border-b border-white/30 hover:border-white/70 rounded-none px-1 py-2 h-auto",
+              "w-full justify-start text-left font-normal bg-transparent border-b border-white/30 hover:border-white hover:bg-white/5 rounded-none px-3 py-3 h-auto",
               !value && "text-muted-foreground",
               className
             )}
           >
-            <CalendarIcon className="mr-2 h-4 w-4" />
+            <CalendarIcon className="mr-2 h-5 w-5" />
             {value ? format(value, "MMMM d, yyyy") : <span>{placeholder}</span>}
             {value && (
               <Button 
@@ -72,14 +99,17 @@ export const DatePickerInput = forwardRef<
           </Button>
         </PopoverTrigger>
         <PopoverContent 
-          className="w-auto p-0 bg-black border border-white/20 shadow-xl rounded-md" 
+          className="w-auto p-0 bg-black border border-white/20 shadow-xl rounded-lg" 
           align="start"
           sideOffset={5}
         >
           <Calendar
             mode="single"
             selected={value}
-            onSelect={onChange}
+            onSelect={(date) => {
+              onChange(date);
+              setTimeout(() => setIsOpen(false), 100);
+            }}
             initialFocus
             className="p-3 pointer-events-auto bg-black text-white"
             disabled={(date) => date > new Date()}
@@ -88,6 +118,27 @@ export const DatePickerInput = forwardRef<
               today: "bg-accent/50 text-white rounded-full border border-white/30"
             }}
           />
+          <div className="p-3 border-t border-white/10 flex justify-between">
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              onClick={() => {
+                onChange(new Date());
+                setTimeout(() => setIsOpen(false), 100);
+              }}
+              className="text-xs hover:bg-white/10"
+            >
+              Today
+            </Button>
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              onClick={() => setIsOpen(false)}
+              className="text-xs hover:bg-white/10"
+            >
+              Close
+            </Button>
+          </div>
         </PopoverContent>
       </Popover>
     </div>
@@ -106,7 +157,7 @@ export const SelectInput = forwardRef<
     label?: string;
   }
 >(({ value, onChange, options, placeholder = "Select option", className, label }, ref) => {
-  const [isOpen, setIsOpen] = React.useState(false);
+  const [isOpen, setIsOpen] = useState(false);
 
   return (
     <div className="mb-4 w-full">
