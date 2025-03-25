@@ -52,16 +52,17 @@ export const DatePickerInput = forwardRef<
             )}
           >
             <CalendarIcon className="mr-2 h-4 w-4" />
-            {value ? format(value, "PPP") : <span>{placeholder}</span>}
+            {value ? format(value, "MMMM d, yyyy") : <span>{placeholder}</span>}
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-auto p-0 bg-black border border-white/20" align="start">
+        <PopoverContent className="w-auto p-0 bg-black border border-white/20 shadow-lg rounded-md" align="start">
           <Calendar
             mode="single"
             selected={value}
             onSelect={onChange}
             initialFocus
-            className="p-3 pointer-events-auto bg-black"
+            className="p-3 pointer-events-auto bg-black text-white"
+            disabled={(date) => date > new Date()}
           />
         </PopoverContent>
       </Popover>
