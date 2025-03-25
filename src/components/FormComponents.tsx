@@ -1,3 +1,4 @@
+
 import React, { forwardRef, useState } from 'react';
 import { CalendarIcon, ChevronDownIcon, X } from 'lucide-react';
 import { format } from 'date-fns';
@@ -99,16 +100,30 @@ export const DatePickerInput = forwardRef<
           </Button>
         </PopoverTrigger>
         <PopoverContent 
-          className="w-auto p-0 bg-black border border-white/20 shadow-xl rounded-lg" 
+          className="w-auto p-0 bg-black border border-white/20 shadow-xl rounded-lg z-50" 
           align="start"
           sideOffset={5}
+          onInteractOutside={(e) => {
+            // Prevent closing when clicking inside the calendar
+            e.preventDefault();
+          }}
+          onPointerDownOutside={(e) => {
+            // Prevent closing when clicking inside the calendar
+            e.preventDefault();
+          }}
+          onFocusOutside={(e) => {
+            // Allow focus to move within the calendar without closing
+            e.preventDefault();
+          }}
         >
           <Calendar
             mode="single"
             selected={value}
             onSelect={(date) => {
-              onChange(date);
-              setTimeout(() => setIsOpen(false), 100);
+              if (date) {
+                onChange(date);
+                // Don't auto-close to allow user to interact with the calendar
+              }
             }}
             initialFocus
             className="p-3 pointer-events-auto bg-black text-white"
@@ -124,7 +139,6 @@ export const DatePickerInput = forwardRef<
               size="sm" 
               onClick={() => {
                 onChange(new Date());
-                setTimeout(() => setIsOpen(false), 100);
               }}
               className="text-xs hover:bg-white/10"
             >
