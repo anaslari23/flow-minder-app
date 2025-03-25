@@ -47,3 +47,6 @@ This project is built with .
 - shadcn-ui
 - Tailwind CSS
 
+**To try on your browser**
+visit - https://period-tracker-beta.vercel.app/
+
