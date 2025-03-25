@@ -1,6 +1,6 @@
 
 import React, { forwardRef } from 'react';
-import { CalendarIcon, ChevronDownIcon } from 'lucide-react';
+import { CalendarIcon, ChevronDownIcon, X } from 'lucide-react';
 import { format } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
@@ -37,6 +37,11 @@ export const DatePickerInput = forwardRef<
     label?: string;
   }
 >(({ value, onChange, placeholder = "Select date", className, label }, ref) => {
+  const handleClear = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onChange(undefined);
+  };
+
   return (
     <div className="mb-4 w-full">
       {label && <label className="text-sm text-muted-foreground mb-1 block">{label}</label>}
@@ -53,9 +58,24 @@ export const DatePickerInput = forwardRef<
           >
             <CalendarIcon className="mr-2 h-4 w-4" />
             {value ? format(value, "MMMM d, yyyy") : <span>{placeholder}</span>}
+            {value && (
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="ml-auto h-6 w-6 p-0 hover:bg-white/10" 
+                onClick={handleClear}
+                aria-label="Clear date"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            )}
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-auto p-0 bg-black border border-white/20 shadow-lg rounded-md" align="start">
+        <PopoverContent 
+          className="w-auto p-0 bg-black border border-white/20 shadow-xl rounded-md" 
+          align="start"
+          sideOffset={5}
+        >
           <Calendar
             mode="single"
             selected={value}
@@ -63,6 +83,10 @@ export const DatePickerInput = forwardRef<
             initialFocus
             className="p-3 pointer-events-auto bg-black text-white"
             disabled={(date) => date > new Date()}
+            modifiersClassNames={{
+              selected: "bg-period text-white rounded-full",
+              today: "bg-accent/50 text-white rounded-full border border-white/30"
+            }}
           />
         </PopoverContent>
       </Popover>

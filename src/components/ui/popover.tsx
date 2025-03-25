@@ -1,3 +1,4 @@
+
 import * as React from "react"
 import * as PopoverPrimitive from "@radix-ui/react-popover"
 
@@ -21,6 +22,22 @@ const PopoverContent = React.forwardRef<
         className
       )}
       {...props}
+      onOpenAutoFocus={(e) => {
+        if (props.onOpenAutoFocus) {
+          props.onOpenAutoFocus(e);
+        }
+        if (!e.defaultPrevented) {
+          e.preventDefault();
+          // This allows the calendar to receive focus but prevents
+          // the page from scrolling to the bottom when opened
+          setTimeout(() => {
+            const elements = document.querySelectorAll('[data-radix-focus-guard]');
+            if (elements.length > 0) {
+              (elements[0] as HTMLElement).focus();
+            }
+          }, 50);
+        }
+      }}
     />
   </PopoverPrimitive.Portal>
 ))
